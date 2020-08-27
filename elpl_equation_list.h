@@ -70,7 +70,7 @@ SymmetricTensor<4,3> set_Hill_tensor( const std::vector<double> &Hill_coefficien
 		  a_[1][enums::x] = - std::sin( sheet_orientation_theta/180. * 4. * std::atan(1) );
 		  a_[1][enums::y] =   std::cos( sheet_orientation_theta/180. * 4. * std::atan(1) );
 		  a_[1][enums::z] = 0;
-		 // third basis vector (for sheets always along z-axis
+		 // third basis vector (for sheets always along z-axis)
 		  a_[2][enums::z] = 1.; // x and y components of this vector are default zero
 	 }
 
@@ -101,7 +101,7 @@ SymmetricTensor<4,3> set_Hill_tensor( const std::vector<double> &Hill_coefficien
 		std::cout<< std::scientific;
 		std::cout << "HillT_H<< Hill Tensor not purely deviatoric, wrong setup of the equations. Results in "
 				  << (HillT_H * StandardTensors::I<3>()).norm()
-				  << " instead of less than 1e-20 (numercially zero)." << std::endl;
+				  << " instead of less than 1e-14 (numercially zero)." << std::endl;
 		AssertThrow(false, ExcMessage("HillT_H<< Hill Tensor not purely deviatoric"));
 	}
 //		 AssertThrow( ( (HillT_H * StandardTensors::I<3>()).norm() + (StandardTensors::I<3>() * HillT_H).norm()) < 1e-20,
