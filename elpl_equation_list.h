@@ -220,7 +220,7 @@ class elastoplastic_equations
 			   * stress_T_t;
 	 };
 	 //#######################################################################################################################################################
-	 Number get_dPhi_dgamma_ep( const double &gamma_k, const double &Phi_k )
+	 Number get_dPhi_dgamma_ep( const double &gamma_k )
 	 {
 		double R = get_hardeningStress_R_ep( get_alpha_n_k_ep(gamma_k) );
 		SymmetricTensor<4,3> A_inv = invert( identity_tensor<3>() + 2.*mu*gamma_k / ( std::sqrt(2./3.)*(yield_stress-R) ) * HillT_H );
