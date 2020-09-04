@@ -152,7 +152,7 @@ class elastoplastic_equations
 		 
 	 };
 
-	 // ToDo:
+	 // @ToDo
 	 // check how to implement/use the parameter like K, yield_stress_incr;
 	 // maybe into constructor or use full parameter argument
 	 // or use a std::vector that contains all the values and is
@@ -177,6 +177,9 @@ class elastoplastic_equations
 	 SymmetricTensor<2,3,Number> stress_T_t;
 	 SymmetricTensor<2,3,Number> n_n1;
 
+	 // @todo Clean up gamma, gamma_input, gamma_k
+	 // @todo Major clean-up, we hardly need any input arguments, e.g. alpha_k is computed
+	 // in this class, so this class knows its most up-to-date value
 	 Number alpha_k, gamma, R;
 	 double alpha_n;
 	 Number d_R_d_gamma;
@@ -185,10 +188,6 @@ class elastoplastic_equations
 	 SymmetricTensor<4,3> d_Tt_d_eps;
 	 
  public:
-	// Reset the Hill tensor in case it shall not be the deviatoric tensor
-	// @todo-optimize: Maybe add an overloaded variant that enables the input
-	// of the classical 6x6 matrix for H.
-	 
    // Accessor functions: \n
    // 1. Update the member variables with the new values from the input arguments \n
    // 2. Call the equation list function and evaluate the desired entry \n
@@ -215,44 +214,24 @@ class elastoplastic_equations
 	 SymmetricTensor<2,3,Number> get_stress_n1_ep( const Number &gamma_input, const Number &alpha_k_input )
 	 {
 		gamma = gamma_input;
-		// start from the trial value not the last \a sigma_n1
-		// where the update of the entire stress tensor equals the update of the deviatoric stress part
-		//return stress_T_t - 2. * mu * gamma * n_n1;
-		return invert( StandardTensors::II<3>() + 2.*mu*gamma/(std::sqrt(2./3.)*(yield_stress-get_hardeningStress_R_ep( alpha_k_input )) ) * HillT_H ) * stress_T_t;
-//		return stress_T_t - 2. * mu * gamma * n_n1;
-//		return stress_km1 - 2. * mu * gamma_update * n_n1;
+		// start from the trial value
+		double R = get_hardeningStress_R_ep( alpha_k_input );
+		return invert( identity_tensor<3>() + 2.*mu*gamma / ( std::sqrt(2./3.)*(yield_stress-R) ) * HillT_H )
+			   * stress_T_t;
 	 };
 	 //#######################################################################################################################################################
-//	 Number get_dPhi_dgamma_ep( const double &alpha_n_input, SymmetricTensor<2,3,Number> &sigma_n1 )
-//	 {
-//	 	alpha_n = alpha_n_input;
-//		SymmetricTensor<4,3> N_four = std::pow( sigma_n1 * HillT_H * sigma_n1, -1.5 ) * ( HillT_H * ( sigma_n1 * HillT_H * sigma_n1 ) - outer_product(HillT_H*sigma_n1, sigma_n1*HillT_H) );
-//
-//	 	AssertThrow( false, ExcMessage("elpl_equation_list<< dPhi_dgamma is OoO"));
-//
-//	 	d_Phi_d_gamma = - 2. * mu * n_n1 * n_n1
-//	 					//- 2. * mu * gamma * n_n1 * N_four * (-2. * mu * n_n1)
-//	 			        + std::sqrt( 2./3. ) * get_d_R_d_gamma_ep(alpha_n);
-//
-//	 	return d_Phi_d_gamma;
-//	 };
-	 //#######################################################################################################################################################
-	 Number get_dPhi_dgamma_ep( const double &gamma_k )
+	 Number get_dPhi_dgamma_ep( const double &gamma_k, const double &Phi_k )
 	 {
 		double R = get_hardeningStress_R_ep( get_alpha_n_k_ep(gamma_k) );
-		SymmetricTensor<4,3> A_inv = invert( StandardTensors::II<3>() + 2.*mu*gamma_k / ( std::sqrt(2./3.)*(yield_stress-R) ) * HillT_H );
-
-//		return - 1. / ( 2. * (Phi_k + sqrt2_3 * (yield_stress-R))*(sqrt2_3 * (yield_stress-R)) )
-//				 * ( eq_list.stress_T_t *
-//											 (eq_list.HillT_H * eq_list.d_Tt_d_eps * ( A_inv * A_inv ) * eq_list.HillT_H * A_inv
-//											 + A_inv * eq_list.HillT_H * ( A_inv * A_inv ) * eq_list.d_Tt_d_eps * eq_list.HillT_H )
-//					 * eq_list.stress_T_t )
-//			   + std::sqrt( 2./3. ) * get_d_R_d_gamma_ep(alpha_n);
-
-		// @todo: The following only achieves superlinear behaviour close to the solution, before it's quadratic
-		// The shorter one works very well for isotropy and better than the second for aniso
-		return -2. * mu * n_n1 * A_inv * n_n1 + std::sqrt( 2./3. ) * get_d_R_d_gamma_ep() ;
-		//return n_n1 * (-2.*mu / (std::sqrt( 2./3. ) * (yield_stress-R)) * (A_inv*A_inv) * HillT_H * stress_T_t) + std::sqrt( 2./3. ) * get_d_R_d_gamma_ep();
+		SymmetricTensor<4,3> A_inv = invert( identity_tensor<3>() + 2.*mu*gamma_k / ( std::sqrt(2./3.)*(yield_stress-R) ) * HillT_H );
+		return - n_n1 * (
+							(A_inv*A_inv)
+							* HillT_H
+							* 2. * mu / ( std::sqrt(2./3.) * (yield_stress-R) )
+							* ( 1. + gamma_k/(yield_stress-R) * get_d_R_d_gamma_ep() )
+						)
+			   * stress_T_t
+			   + std::sqrt(2./3.) * get_d_R_d_gamma_ep();
 	 }
 	 //#######################################################################################################################################################
 	 Number get_hardeningStress_R_ep( const Number &alpha_k_input )
@@ -285,7 +264,6 @@ class elastoplastic_equations
 		double tmp = tensor * HillT_H * tensor;
 		AssertThrow( tmp>=0, ExcMessage("elpl_equation_list<< The Hill norm of the stress tensor got negative."));
 		return std::sqrt(tmp);
-		//return std::sqrt( tensor * HillT_H * tensor );
 	 };
 	 //#######################################################################################################################################################
 	 Number get_plastic_yield_fnc ( const SymmetricTensor<2,3,Number> &stress_k, Number &alpha_k_input )
@@ -368,7 +346,7 @@ class elastoplastic_equations
 				}
 	 		}
 	 		break;
-	 		// In essence, we take all this effort to enable us to implementen different hardening laws simply by the set of three equations
+	 		// In essence, we take all this effort to enable us to implement different hardening laws simply by the set of three equations
 	 		// * evolution equation for the internal variable \a alpha_k
 	 		// * hardening stress \a R
 	 		// * derivative of the \a R wrt to the plastic Lagrange multiplier \a gamma
