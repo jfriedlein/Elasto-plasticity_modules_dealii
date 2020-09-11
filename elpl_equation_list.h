@@ -107,6 +107,7 @@ SymmetricTensor<4,3> set_Hill_tensor( const std::vector<double> &Hill_coefficien
 //		 AssertThrow( ( (HillT_H * StandardTensors::I<3>()).norm() + (StandardTensors::I<3>() * HillT_H).norm()) < 1e-20,
 //				      ExcMessage("HillT_H<< Hill Tensor not purely deviatoric, wrong setup of the equations. Results in "
 //				    		     +std::to_string((HillT_H * StandardTensors::I<3>()).norm())+" instead of less than 1e-20 (numercially zero)."));
+
 	return HillT_H;
 }
 
@@ -115,6 +116,7 @@ template<int dim, typename Number>
 class elastoplastic_equations
  {
  public:
+	// For pure elasto-plasticity
 	elastoplastic_equations( const unsigned int plastic_hardening, const double &mu, const double &kappa, const double &yield_stress,
 							 const double &K, const double &yield_stress_incr, const double &K_exp,
 							 const SymmetricTensor<2,3> &eps_n1, const SymmetricTensor<2,3> &eps_p_n, const double &alpha_n, const SymmetricTensor<4,3> &HillT_H )
@@ -129,6 +131,7 @@ class elastoplastic_equations
 	eps_n1(eps_n1),
 	eps_p_n(eps_p_n),
 	alpha_n(alpha_n),
+	alpha_k(alpha_n), // We also init alpha_k here
 	HillT_H(HillT_H)
 	{
 		stress_T_t = kappa * trace(eps_n1) * unit_symmetric_tensor<3>()
@@ -138,6 +141,27 @@ class elastoplastic_equations
 		// The Hill tensor was already set in the parameter file and possibly updated for anisotropy
 		// in the main function, so we can simply use it here containing its final values
 		 n_n1 = (HillT_H * stress_T_t) / std::sqrt( stress_T_t * HillT_H * stress_T_t );
+	}
+
+	// For plasticity-damage
+	elastoplastic_equations( const unsigned int plastic_hardening, const double &mu, const double &kappa, const double &yield_stress,
+							 const double &K, const double &yield_stress_incr, const double &K_exp,
+							 const SymmetricTensor<2,3> &eps_n1, const SymmetricTensor<2,3> &eps_p_n, const double &alpha_n, const double &d_n, const SymmetricTensor<4,3> &HillT_H )
+	:
+	plastic_hardening(plastic_hardening),
+	mu(mu),
+	kappa(kappa),
+	yield_stress(yield_stress),
+	K(K),
+	yield_stress_incr(yield_stress_incr),
+	K_exp(K_exp),
+	eps_n1(eps_n1),
+	eps_p_n(eps_p_n),
+	alpha_n(alpha_n),
+	alpha_k(alpha_n), // We also init alpha_k here
+	HillT_H(HillT_H)
+	{
+		// We don't compute anything here, because we don't have the actual damage functions yet
 	}
 
  //private:
@@ -166,6 +190,15 @@ class elastoplastic_equations
 	 const double K_exp;
 	 
 	 SymmetricTensor<4,3> HillT_H;
+
+	 // Damage functions for plasticity-damage
+	 double dmg_kappa = 1.;
+	 double dmg_mu = 1.;
+	 double dmg_p = 1.;
+	 // @todo We could such a flag set in the constructor, to raise error messages in case
+	 // some functions is called that is only valid for pure plasticity. However, every
+	 // AssertThrow cost real money, so we have to see whether that is worth it.
+	 //const bool damage_active = false;
 
 	 // ToDo-optimize: Think about using pointers, etc. to avoid the local copies of 
 	 // these variables in the normal code and in this class. Or store the values
@@ -200,10 +233,10 @@ class elastoplastic_equations
 		return alpha_k;
 	 };
 	 //#######################################################################################################################################################
-	 SymmetricTensor<2,3,Number> get_eps_p_n_k_ep( const Number &gamma_input )
+	 SymmetricTensor<2,3,Number> get_eps_p_n_k_ep( const Number &gamma_input, const Number dmg_p=1. )
 	 {
 		gamma = gamma_input;
-		return eps_p_n + gamma * n_n1;
+		return eps_p_n + (1. / dmg_p) * gamma * n_n1;
 	 };
 	 //#######################################################################################################################################################
 	 SymmetricTensor<2,3,Number> get_stress_T_t_ep(  )
@@ -211,37 +244,52 @@ class elastoplastic_equations
 		return stress_T_t;
 	 };
 	 //#######################################################################################################################################################
-	 SymmetricTensor<2,3,Number> get_stress_n1_ep( const Number &gamma_input, const Number &alpha_k_input )
+	 void set_stress_T( SymmetricTensor<2,3,Number> &stress_T_input  )
+	 {
+		// @todo For instance, set a flag that the trial stress is now properly set and can be used
+		stress_T_t = stress_T_input;
+	 };
+	 //#######################################################################################################################################################
+	 SymmetricTensor<2,3,Number> get_stress_n1_ep( const Number &gamma_input, const Number dmg_mu=1., const Number dmg_p=1. )
 	 {
 		gamma = gamma_input;
 		// start from the trial value
-		double R = get_hardeningStress_R_ep( alpha_k_input );
-		return invert( identity_tensor<3>() + 2.*mu*gamma / ( std::sqrt(2./3.)*(yield_stress-R) ) * HillT_H )
+		// Note that for the following to work, namely that we don't use alpha as an input argument, we need to compute the newest alpha
+		// via the get_alpha_n_k_ep function (which writes it into the member variable \a alpha_k)
+		double R = get_hardeningStress_R_ep( );
+		return invert( identity_tensor<3>() + 2.*mu * dmg_mu/dmg_p * gamma / ( std::sqrt(2./3.)*(yield_stress-R) ) * HillT_H )
 			   * stress_T_t;
 	 };
 	 //#######################################################################################################################################################
+	 SymmetricTensor<4,3,Number> get_Ainv( const Number &gamma_k, const Number dmg_mu=1., const Number dmg_p=1. )
+	 {
+		double R = get_hardeningStress_R_ep(  );
+		return invert( identity_tensor<3>() + 2.*mu * dmg_mu/dmg_p * gamma_k / ( std::sqrt(2./3.)*(yield_stress-R) ) * HillT_H );
+	 }
+	 //#######################################################################################################################################################
 	 Number get_dPhi_dgamma_ep( const double &gamma_k )
 	 {
-		double R = get_hardeningStress_R_ep( get_alpha_n_k_ep(gamma_k) );
-		SymmetricTensor<4,3> A_inv = invert( identity_tensor<3>() + 2.*mu*gamma_k / ( std::sqrt(2./3.)*(yield_stress-R) ) * HillT_H );
+		double R = get_hardeningStress_R_ep(  );
+		SymmetricTensor<4,3> A_inv = get_Ainv( gamma_k );
 		return - n_n1 * (
 							(A_inv*A_inv)
 							* HillT_H
 							* 2. * mu / ( std::sqrt(2./3.) * (yield_stress-R) )
-							* ( 1. + gamma_k/(yield_stress-R) * get_d_R_d_gamma_ep() )
+							* ( 1. + gamma_k/(yield_stress-R) * get_d_R_d_gammap_ep() )
 						)
 			   * stress_T_t
-			   + std::sqrt(2./3.) * get_d_R_d_gamma_ep();
+			   + std::sqrt(2./3.) * get_d_R_d_gammap_ep();
 	 }
 	 //#######################################################################################################################################################
-	 Number get_hardeningStress_R_ep( const Number &alpha_k_input )
+	 Number get_hardeningStress_R_ep(  )
 	 {
-	 	alpha_k = alpha_k_input;
+		// Note that for the following to work, namely that we don't use alpha as an input argument, we need to compute the newest alpha
+		// via the get_alpha_n_k_ep function (which writes it into the member variable \a alpha_k)
 	 	elastoplastic_equations_list ( get_R );
 	 	return R;
 	 };
 	 //#######################################################################################################################################################
-	 Number get_d_R_d_gamma_ep( )
+	 Number get_d_R_d_gammap_ep( )
 	 {
 	 	elastoplastic_equations_list ( get_dR_dg );
 	 	return d_R_d_gamma;
@@ -255,20 +303,24 @@ class elastoplastic_equations
 	 //#######################################################################################################################################################
 	 void update_n_n1_ep( const SymmetricTensor<2,3,Number> &stress_k )
 	 {
-		n_n1 = (HillT_H * stress_k) / get_yielding_norm( stress_k );
+		// For zero strain (initial) we get zero stress and 0/0 doesn't work
+		 double denominator = (stress_k.norm()==0.) ? 1. : get_yielding_norm( stress_k );
+		n_n1 = (HillT_H * stress_k) / denominator;
 	 };
 	 //#######################################################################################################################################################
 	 Number get_yielding_norm( const SymmetricTensor<2,3,Number> &tensor )
 	 {
 		// @todo-ensure: How can the Hill-norm get negative?
 		double tmp = tensor * HillT_H * tensor;
-		AssertThrow( tmp>=0, ExcMessage("elpl_equation_list<< The Hill norm of the stress tensor got negative."));
+		AssertThrow( tmp>=0, ExcMessage("elpl_equation_list<< The Hill norm of the stress tensor got negative as "+std::to_string(tmp)+"."));
 		return std::sqrt(tmp);
 	 };
 	 //#######################################################################################################################################################
-	 Number get_plastic_yield_fnc ( const SymmetricTensor<2,3,Number> &stress_k, Number &alpha_k_input )
+	 Number get_plastic_yield_fnc ( const SymmetricTensor<2,3,Number> &stress_k, const double &dmg_p=1. )
 	 {
-		 return get_yielding_norm( stress_k ) - std::sqrt(2./3.) * ( yield_stress - get_hardeningStress_R_ep( alpha_k_input ) );
+		// Note that for the following to work, namely that we don't use alpha as an input argument, we need to compute the newest alpha
+		// via the get_alpha_n_k_ep function (which writes it into the member variable \a alpha_k)
+		 return 1./dmg_p * get_yielding_norm( stress_k ) - std::sqrt(2./3.) * ( yield_stress - get_hardeningStress_R_ep( ) );
 	 }
 	 //#######################################################################################################################################################
 	 SymmetricTensor<4,3> get_Lambda_ep( const Number &gamma_input )
@@ -287,12 +339,19 @@ class elastoplastic_equations
 //				   );
 	 };
 	 //#######################################################################################################################################################
+	 SymmetricTensor<4,3> get_N_four( const SymmetricTensor<2,3> &sigma_n1 )
+	 {
+		 return std::pow( sigma_n1 * HillT_H * sigma_n1, -1.5 )
+		 	 	* ( HillT_H * ( sigma_n1 * HillT_H * sigma_n1 )
+		 	 		- outer_product(HillT_H*sigma_n1, sigma_n1*HillT_H) );
+	 }
+	 //#######################################################################################################################################################
 	 SymmetricTensor<4,3> get_tangent_plastic_ep( const SymmetricTensor<2,3> &sigma_n1, const Number &gamma_k )
 	 {
-		SymmetricTensor<4,3> N_four = std::pow( sigma_n1 * HillT_H * sigma_n1, -1.5 ) * ( HillT_H * ( sigma_n1 * HillT_H * sigma_n1 ) - outer_product(HillT_H*sigma_n1, sigma_n1*HillT_H) );
+		SymmetricTensor<4,3> N_four = get_N_four( sigma_n1 );
 		SymmetricTensor<4,3> E_e = invert( invert(d_Tt_d_eps) + gamma_k * N_four );
 
-		return E_e - 1. / ( n_n1 * E_e * n_n1 - std::sqrt( 2./3. ) * get_d_R_d_gamma_ep() ) * ( outer_product(E_e*n_n1, n_n1*E_e) );
+		return E_e - 1. / ( n_n1 * E_e * n_n1 - std::sqrt( 2./3. ) * get_d_R_d_gammap_ep() ) * ( outer_product(E_e*n_n1, n_n1*E_e) );
 	 };
 	 
    // Summary of equations for the different hardening types
