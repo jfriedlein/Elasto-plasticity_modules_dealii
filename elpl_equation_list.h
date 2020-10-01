@@ -140,7 +140,7 @@ class elastoplastic_equations
 					 + 2. * mu * deviator_tensor<3>();
 		// The Hill tensor was already set in the parameter file and possibly updated for anisotropy
 		// in the main function, so we can simply use it here containing its final values
-		 n_n1 = (HillT_H * stress_T_t) / std::sqrt( stress_T_t * HillT_H * stress_T_t );
+		 update_n_n1_ep(stress_T_t); //n_n1 = (HillT_H * stress_T_t) / std::sqrt( stress_T_t * HillT_H * stress_T_t );
 	}
 
 	// For plasticity-damage
@@ -213,7 +213,9 @@ class elastoplastic_equations
 	 // @todo Clean up gamma, gamma_input, gamma_k
 	 // @todo Major clean-up, we hardly need any input arguments, e.g. alpha_k is computed
 	 // in this class, so this class knows its most up-to-date value
-	 Number alpha_k, gamma, R;
+	 Number alpha_k;
+	 Number gamma = 0.;
+	 Number R = 0.;
 	 double alpha_n;
 	 Number d_R_d_gamma;
 	 Number d_Phi_d_gamma;
@@ -264,21 +266,23 @@ class elastoplastic_equations
 	 SymmetricTensor<4,3,Number> get_Ainv( const Number &gamma_k, const Number dmg_mu=1., const Number dmg_p=1. )
 	 {
 		double R = get_hardeningStress_R_ep(  );
-		return invert( identity_tensor<3>() + 2.*mu * dmg_mu/dmg_p * gamma_k / ( std::sqrt(2./3.)*(yield_stress-R) ) * HillT_H );
+		return invert( identity_tensor<3>() + 2. * mu * dmg_mu/dmg_p * gamma_k / ( std::sqrt(2./3.)*(yield_stress-R)) * HillT_H );
 	 }
 	 //#######################################################################################################################################################
-	 Number get_dPhi_dgamma_ep( const double &gamma_k )
+	 Number get_dPhi_dgamma_ep( const double &gamma_k, const double &Phi_k )
 	 {
 		double R = get_hardeningStress_R_ep(  );
 		SymmetricTensor<4,3> A_inv = get_Ainv( gamma_k );
+		// The use of the newest yield function seems to be quite quite advantages (reduces nbr of qp iterations by one,
+		// and for linear isotropic hardening instead of five iterations, we get the desired one-step solution)
 		return - n_n1 * (
 							(A_inv*A_inv)
 							* HillT_H
-							* 2. * mu / ( std::sqrt(2./3.) * (yield_stress-R) )
-							* ( 1. + gamma_k/(yield_stress-R) * get_d_R_d_gammap_ep() )
+							* 2. * mu / ( std::sqrt(2./3.) * (yield_stress-R) + Phi_k )
+							* ( 1. + gamma_k/(yield_stress-R) * get_d_R_d_gammap_ep(gamma_k) )
 						)
-			   * stress_T_t
-			   + std::sqrt(2./3.) * get_d_R_d_gammap_ep();
+			          * stress_T_t
+			   + std::sqrt(2./3.) * get_d_R_d_gammap_ep(gamma_k);
 	 }
 	 //#######################################################################################################################################################
 	 Number get_hardeningStress_R_ep(  )
@@ -289,8 +293,11 @@ class elastoplastic_equations
 	 	return R;
 	 };
 	 //#######################################################################################################################################################
-	 Number get_d_R_d_gammap_ep( )
+	 Number get_d_R_d_gammap_ep( const Number &gamma_input )
 	 {
+		// The saturated alpha case needs the current gamma_k:
+		 gamma = gamma_input;
+
 	 	elastoplastic_equations_list ( get_dR_dg );
 	 	return d_R_d_gamma;
 	 };
@@ -351,7 +358,7 @@ class elastoplastic_equations
 		SymmetricTensor<4,3> N_four = get_N_four( sigma_n1 );
 		SymmetricTensor<4,3> E_e = invert( invert(d_Tt_d_eps) + gamma_k * N_four );
 
-		return E_e - 1. / ( n_n1 * E_e * n_n1 - std::sqrt( 2./3. ) * get_d_R_d_gammap_ep() ) * ( outer_product(E_e*n_n1, n_n1*E_e) );
+		return E_e - 1. / ( n_n1 * E_e * n_n1 - std::sqrt( 2./3. ) * get_d_R_d_gammap_ep(gamma_k) ) * ( outer_product(E_e*n_n1, n_n1*E_e) );
 	 };
 	 
    // Summary of equations for the different hardening types
