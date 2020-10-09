@@ -7,6 +7,9 @@
 //
 #include "../MA-Code/enumerator_list.h"
 
+// for get_value(*)
+#include "../Sacado_Tensors_dealII/Sacado_Wrapper.h"
+
 using namespace dealii;
 
 // Addition to the enumerator list
@@ -175,16 +178,17 @@ namespace elastoplastic_equations
 	 template<typename Number>
 	 SymmetricTensor<2,3,Number> get_eps_p_n_k( const Number &gamma, const SymmetricTensor<2,3,Number> &n_n1, const SymmetricTensor<2,3,double> &eps_p_n, const Number dmg_p=1. )
 	 {
-		return eps_p_n + (1. / dmg_p) * gamma * n_n1;
+		return SymmetricTensor<2,3,Number>(eps_p_n) + (1. / dmg_p) * gamma * n_n1;
 	 }
 	 //#######################################################################################################################################################
 	 template<typename Number>
 	 SymmetricTensor<2,3,Number> get_stress_T_t( const SymmetricTensor<2,3,Number> &eps_n1, const SymmetricTensor<2,3> &eps_p_n, const std::vector<double> &material_parameters )
 	 {
-		 return /*stress_T_t =*/ material_parameters[enums::kappa] * trace(eps_n1) * unit_symmetric_tensor<3>()
+		 return /*stress_T_t =*/ material_parameters[enums::kappa] * trace(eps_n1) * unit_symmetric_tensor<3,Number>()
 								 + 2. * material_parameters[enums::mu] * ( deviator(eps_n1) - eps_p_n );
 	 }
 	 //#######################################################################################################################################################
+	 // @note We use \a HillT_H as constant input argument, but transform it to a SymmetricTensor<4,3,Number>, so all the tensor operations work
 	 template<typename Number>
 	 SymmetricTensor<2,3,Number> get_stress_n1( const Number &gamma, const Number &hardStress_R, const SymmetricTensor<2,3,Number> &stress_T_t, const SymmetricTensor<4,3> &HillT_H,
 												const std::vector<double> &cm, const Number dmg_mu=1., const Number dmg_p=1. )
@@ -192,9 +196,9 @@ namespace elastoplastic_equations
 		// start from the trial value
 		// Note that for the following to work, namely that we don't use alpha as an input argument, we need to compute the newest alpha
 		// via the get_alpha_n_k_ep function (which writes it into the member variable \a alpha_k)
-		return invert( identity_tensor<3>() + 2.*cm[enums::mu] * dmg_mu/dmg_p * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress] - hardStress_R) ) * HillT_H )
+		return invert<3,Number>( identity_tensor<3,Number>()
+								 + 2.*cm[enums::mu] * dmg_mu/dmg_p * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress] - hardStress_R) ) * SymmetricTensor<4,3,Number>(HillT_H) )
 			   * stress_T_t;
-//		 return stress_T_t - 2.*cm[enums::mu]*gamma*deviator(stress_T_t)/deviator(stress_T_t).norm();
 	 }
 	 //#######################################################################################################################################################
 	 template<typename Number>
@@ -202,7 +206,9 @@ namespace elastoplastic_equations
 										   const std::vector<double> &cm, const SymmetricTensor<4,3> &HillT_H,
 										   const Number dmg_mu=1., const Number dmg_p=1. )
 	 {
-		return invert( identity_tensor<3>() + 2. * cm[enums::mu] * dmg_mu/dmg_p * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress]-hardStress_R)) * HillT_H );
+		return invert<3,Number>( identity_tensor<3,Number>()
+								 + 2. * cm[enums::mu] * dmg_mu/dmg_p * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress]-hardStress_R))
+								   * SymmetricTensor<4,3,Number>(HillT_H) );
 	 }
 	 //#######################################################################################################################################################
 	 template<typename Number>
@@ -233,7 +239,7 @@ namespace elastoplastic_equations
 			 	 	 	     const SymmetricTensor<2,3,Number> &stress_T_t, const double &alpha_n,
 							 const std::vector<double> &cm, const SymmetricTensor<4,3> &HillT_H, const Number &dmg_mu=1., const Number &dmg_p=1. )
 	 {
-		SymmetricTensor<4,3> A_inv = get_Ainv( gamma, hardStress_R, cm, HillT_H, dmg_mu, dmg_p );
+		SymmetricTensor<4,3,Number> A_inv = get_Ainv( gamma, hardStress_R, cm, HillT_H, dmg_mu, dmg_p );
 		// The use of the newest yield function seems to be quite quite advantages (reduces nbr of qp iterations by one,
 		// and for linear isotropic hardening instead of five iterations, we get the desired one-step solution)
 		return - n_k  * (
@@ -244,8 +250,6 @@ namespace elastoplastic_equations
 						)
 					  * stress_T_t
 			   + std::sqrt(2./3.) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm);
-
-//		return -( 2*cm[enums::mu] + 2./3. * cm[enums::K] );
 	 }
 	 //#######################################################################################################################################################
 	 template<typename Number>
@@ -271,8 +275,8 @@ namespace elastoplastic_equations
 	 Number get_yielding_norm( const SymmetricTensor<2,3,Number> &tensor, const SymmetricTensor<4,3> &HillT_H, const bool &GG_mode_active=false, bool &GG_mode_requested=false )
 	 {
 		// @todo-ensure: How can the Hill-norm get negative?
-		double tmp = tensor * HillT_H * tensor;
-		if ( tmp<0 )
+		Number tmp = tensor * HillT_H * tensor;
+		if ( SacadoQP::get_value(tmp) < 0 )
 		{
 			// If the GG-mode is active, then we request a restart (=true) and overwrite the negative value by just something.
 			if ( GG_mode_active )
@@ -282,7 +286,7 @@ namespace elastoplastic_equations
 				tmp = 9e9;
 			}
 			else
-				AssertThrow( false, ExcMessage("elpl_equation_list<< The Hill norm of the stress tensor got negative as "+std::to_string(tmp)+"."));
+				AssertThrow( false, ExcMessage("elpl_equation_list<< The Hill norm of the stress tensor got negative as "+std::to_string(SacadoQP::get_value(tmp))+"."));
 		}
 		return std::sqrt(tmp);
 	 }
@@ -295,15 +299,26 @@ namespace elastoplastic_equations
 		return (HillT_H * stress_k) / denominator;
 	 }
 	 //#######################################################################################################################################################
-	 // @todo We run into trouble here with our optional arguments, I would like to be able to use GG-mode options also without the damage option
+	 // @todo We run into trouble here with our optional arguments, I would like to be able to use GG-mode options also without the damage option.
+	 // As a cheap workaround we used another function here without the damage
 	 template<typename Number>
 	 Number get_plastic_yield_fnc ( const SymmetricTensor<2,3,Number> &stress_k, const Number &hardStress_R,
 									const std::vector<double> &cm, const SymmetricTensor<4,3> &HillT_H,
-									const double &dmg_p=1., const bool &GG_mode_active=false, bool &GG_mode_requested=false )
+									const Number &dmg_p=1., const bool &GG_mode_active=false, bool &GG_mode_requested=false )
 	 {
 		// Note that for the following to work, namely that we don't use alpha as an input argument, we need to compute the newest alpha
 		// via the get_alpha_n_k_ep function (which writes it into the member variable \a alpha_k)
 		 return 1./dmg_p * get_yielding_norm( stress_k, HillT_H, GG_mode_active, GG_mode_requested ) - std::sqrt(2./3.) * ( cm[enums::yield_stress] - hardStress_R );
+	 }
+	 //#######################################################################################################################################################
+	 template<typename Number>
+	 Number get_plastic_yield_fnc ( const SymmetricTensor<2,3,Number> &stress_k, const Number &hardStress_R,
+									const std::vector<double> &cm, const SymmetricTensor<4,3> &HillT_H,
+									const bool &GG_mode_active=false, bool &GG_mode_requested=false )
+	 {
+		// Note that for the following to work, namely that we don't use alpha as an input argument, we need to compute the newest alpha
+		// via the get_alpha_n_k_ep function (which writes it into the member variable \a alpha_k)
+		 return get_yielding_norm( stress_k, HillT_H, GG_mode_active, GG_mode_requested ) - std::sqrt(2./3.) * ( cm[enums::yield_stress] - hardStress_R );
 	 }
 	 //#######################################################################################################################################################
 	 // The following is only used for analytical tangents (because it's the analytical tangent), hence we need to \a Number template
@@ -329,6 +344,15 @@ namespace elastoplastic_equations
 	 }
 	 //#######################################################################################################################################################
 	 /**
+	  * @note Only valid for pure elasticity
+	  */
+	 SymmetricTensor<4,3> get_tangent_elastic( const std::vector<double> &cm )
+	 {
+		return cm[enums::kappa] * outer_product(unit_symmetric_tensor<3>(), unit_symmetric_tensor<3>())
+			   + 2. * cm[enums::mu] * deviator_tensor<3>();
+	 }
+	 //#######################################################################################################################################################
+	 /**
 	  * @note Only valid for pure plasticity (not for damage)
 	  */
 	 SymmetricTensor<4,3> get_tangent_plastic( const SymmetricTensor<2,3> &stress_n1, const double &gamma, const SymmetricTensor<2,3> &n_n1,
@@ -341,11 +365,6 @@ namespace elastoplastic_equations
 		SymmetricTensor<4,3> E_e = invert( invert(d_Tt_d_eps) + gamma * N_four );
 
 		return E_e - 1. / ( n_n1 * E_e * n_n1 - std::sqrt(2./3.) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm) ) * ( outer_product(E_e*n_n1, n_n1*E_e) );
-
-//		 return cm[enums::kappa] * StandardTensors::IxI<3>()
-//				+ 2. * cm[enums::mu] * StandardTensors::I_deviatoric<3>()
-//				- 4.*cm[enums::mu]*cm[enums::mu] / ( 2.*cm[enums::mu] + 2./3. * cm[enums::K] ) * outer_product(n_n1,n_n1)
-//				- 4.*cm[enums::mu]*cm[enums::mu] * gamma / deviator(stress_T_t).norm() * ( StandardTensors::I_deviatoric<3>() - outer_product(n_n1,n_n1) );
 	 }
  }
 
