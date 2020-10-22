@@ -42,11 +42,12 @@ namespace enums
  * Then the *_n values (constant in this Newton-Raphson iteration follow.
  * Thirdly, we get the material parameter (sometimes abbreviated as 'cm') and possibly the Hill tensor.
  * And lastly, if needed the optional damage functions for coupled plasticity-damage
+ * @note The functions are arranged in such a way that the definitions are put before the usage.
  */
 namespace elastoplastic_equations
 {
 	/**
-	 * Verify whether the chosen plastic hardening law exists
+	 * Verifies whether the chosen plastic hardening law exists
 	 * @param plastic_hardening
 	 */
 	void verify_hardening_law ( enums::enum_hardening_law &plastic_hardening )
@@ -188,28 +189,75 @@ namespace elastoplastic_equations
 								 + 2. * material_parameters[enums::mu] * ( deviator(eps_n1) - eps_p_n );
 	 }
 	 //#######################################################################################################################################################
-	 // @note We use \a HillT_H as constant input argument, but transform it to a SymmetricTensor<4,3,Number>, so all the tensor operations work
+	 /**
+	  * Computing the inverse of the fourth order tensor \a A, optionally we can incorporate the
+	  * yield function \a Phi_k. However, it converges better if the leave \a Phi_k as zero.
+	  * @param gamma
+	  * @param hardStress_R
+	  * @param Phi_k Not called by reference to be able to call get_Ainv(..., Number(0), ...) instead of
+	  * having to declare a variable for this each time the function is called.
+	  * @param cm
+	  * @param HillT_H
+	  * @param dmg_mu
+	  * @param dmg_p
+	  * @return
+	  */
 	 template<typename Number>
-	 SymmetricTensor<2,3,Number> get_stress_n1( const Number &gamma, const Number &hardStress_R, const SymmetricTensor<2,3,Number> &stress_T_t, const SymmetricTensor<4,3> &HillT_H,
-												const std::vector<double> &cm, const Number dmg_mu=1., const Number dmg_p=1. )
-	 {
-		// start from the trial value
-		// Note that for the following to work, namely that we don't use alpha as an input argument, we need to compute the newest alpha
-		// via the get_alpha_n_k_ep function (which writes it into the member variable \a alpha_k)
-		return invert<3,Number>( identity_tensor<3,Number>()
-								 + 2.*cm[enums::mu] * dmg_mu/dmg_p * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress] - hardStress_R) ) * SymmetricTensor<4,3,Number>(HillT_H) )
-			   * stress_T_t;
-	 }
-	 //#######################################################################################################################################################
-	 template<typename Number>
-	 SymmetricTensor<4,3,Number> get_Ainv( const Number &gamma, const Number &hardStress_R,
+	 SymmetricTensor<4,3,Number> get_Ainv( const Number &gamma, const Number &hardStress_R, const Number Phi_k,
 										   const std::vector<double> &cm, const SymmetricTensor<4,3> &HillT_H,
 										   const Number dmg_mu=1., const Number dmg_p=1. )
 	 {
 		return invert<3,Number>( identity_tensor<3,Number>()
-								 + 2. * cm[enums::mu] * dmg_mu/dmg_p * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress]-hardStress_R))
+								 + 2. * cm[enums::mu] * dmg_mu/dmg_p * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress]-hardStress_R) + Phi_k )
 								   * SymmetricTensor<4,3,Number>(HillT_H) );
 	 }
+	 //#######################################################################################################################################################
+	 // @note We use \a HillT_H as constant input argument, but transform it to a SymmetricTensor<4,3,Number>, so all the tensor operations work
+	 template<typename Number>
+	 SymmetricTensor<2,3,Number> get_stress_n1( const Number &gamma, const Number &hardStress_R, const SymmetricTensor<2,3,Number> &stress_T_t,
+			 	 	 	 	 	 	 	 	 	const SymmetricTensor<4,3> &HillT_H, const std::vector<double> &cm, const Number dmg_mu=1., const Number dmg_p=1. )
+	 {
+		// start from the trial value
+//		return invert<3,Number>( identity_tensor<3,Number>()
+//								 + 2.*cm[enums::mu] * dmg_mu/dmg_p * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress] - hardStress_R) ) * SymmetricTensor<4,3,Number>(HillT_H) )
+//			   * stress_T_t;
+		 return get_Ainv( gamma, hardStress_R, Number(0), cm, HillT_H, dmg_mu, dmg_p ) * stress_T_t;
+	 }
+//	 SymmetricTensor<2,3,fad_double> get_stress_n1( const fad_double &gamma, const fad_double &hardStress_R, const SymmetricTensor<2,3,fad_double> &stress_T_t, const double &Phi_k,
+//			 	 	 	 	 	 	 	 	 	const SymmetricTensor<4,3> &HillT_H, const std::vector<double> &cm, const fad_double dmg_mu=1., const fad_double dmg_p=1. )
+//	 {
+//		// start from the trial value
+//		 SymmetricTensor<2,3,fad_double> stress_n1 = invert<3,fad_double>( identity_tensor<3,fad_double>()
+//								 + 2.*cm[enums::mu] * dmg_mu/dmg_p * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress] - hardStress_R) + Phi_k ) * SymmetricTensor<4,3,fad_double>(HillT_H) )
+//			   * stress_T_t;
+//		 // Now we compute the value without Phi_k
+//		 SymmetricTensor<2,3,fad_double> stress_n1_old = invert<3,fad_double>( identity_tensor<3,fad_double>()
+//								 + 2.*cm[enums::mu] * dmg_mu/dmg_p * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress] - hardStress_R) ) * SymmetricTensor<4,3,fad_double>(HillT_H) )
+//			   * stress_T_t;
+//		 std::cout << "stres_n1_old1 " << stress_n1_old << std::endl;
+//		 // The only thing we want to keep from the computation with Phi_k is the derivative wrt to gamma_k
+//			for ( unsigned int i=0; i<3; i++ )
+//				for ( unsigned int j=0; j<3; j++ )
+//				{
+//					double *derivs = &stress_n1[i][j].fastAccessDx(0);
+//					double *derivs_old = &stress_n1_old[i][j].fastAccessDx(0);
+//
+//					derivs_old[6] = derivs[6];
+//				}
+//			 std::cout << "stres_n1_old2 " << stress_n1_old << std::endl;
+//
+//		 return stress_n1_old;
+//	 }
+//	 SymmetricTensor<2,3,double> get_stress_n1( const double &gamma, const double &hardStress_R, const SymmetricTensor<2,3,double> &stress_T_t, const double &Phi_k,
+//			 	 	 	 	 	 	 	 	 	const SymmetricTensor<4,3> &HillT_H, const std::vector<double> &cm, const double dmg_mu=1., const double dmg_p=1. )
+//	 {
+//		// start from the trial value
+//		// Note that for the following to work, namely that we don't use alpha as an input argument, we need to compute the newest alpha
+//		// via the get_alpha_n_k_ep function (which writes it into the member variable \a alpha_k)
+//		 return invert<3,double>( identity_tensor<3,double>()
+//								 + 2.*cm[enums::mu] * dmg_mu/dmg_p * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress] - hardStress_R) + Phi_k*0 ) * SymmetricTensor<4,3,double>(HillT_H) )
+//			   * stress_T_t;
+//	 }
 	 //#######################################################################################################################################################
 	 template<typename Number>
 	 Number get_d_R_d_gammap( const Number &gamma, const Number &alpha_k, const double &alpha_n, const std::vector<double> &cm )
@@ -234,19 +282,36 @@ namespace elastoplastic_equations
 	 }
 	 //#######################################################################################################################################################
 	 // @todo not compatible to damage, update + Phi_k for all terms
+	 /**
+	  * @note Be aware of the usage of Phi_k, because the stress norm in the equations can only be
+	  * replaced by the current yield stress and yield function, where we here assume the yield function
+	  * to be not satisfied (because we iterate)
+	  * @param gamma
+	  * @param hardStress_R
+	  * @param alpha_k
+	  * @param Phi_k
+	  * @param n_k
+	  * @param stress_T_t
+	  * @param alpha_n
+	  * @param cm
+	  * @param HillT_H
+	  * @param dmg_mu
+	  * @param dmg_p
+	  * @return
+	  */
 	 template<typename Number>
 	 Number get_dPhi_dgamma( const Number &gamma, const Number &hardStress_R, const Number &alpha_k, const Number &Phi_k, const SymmetricTensor<2,3,Number> &n_k,
 			 	 	 	     const SymmetricTensor<2,3,Number> &stress_T_t, const double &alpha_n,
 							 const std::vector<double> &cm, const SymmetricTensor<4,3> &HillT_H, const Number &dmg_mu=1., const Number &dmg_p=1. )
 	 {
-		SymmetricTensor<4,3,Number> A_inv = get_Ainv( gamma, hardStress_R, cm, HillT_H, dmg_mu, dmg_p );
+		SymmetricTensor<4,3,Number> A_inv = get_Ainv( gamma, hardStress_R, Number(0), cm, HillT_H, dmg_mu, dmg_p );
 		// The use of the newest yield function seems to be quite quite advantages (reduces nbr of qp iterations by one,
 		// and for linear isotropic hardening instead of five iterations, we get the desired one-step solution)
 		return - n_k  * (
 							(A_inv*A_inv)
 							* HillT_H
 							* 2. * cm[enums::mu] / ( std::sqrt(2./3.) * (cm[enums::yield_stress]-hardStress_R) + Phi_k )
-							* ( 1. + gamma / ( std::sqrt(1.5)*Phi_k + (cm[enums::yield_stress]-hardStress_R) ) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm) )
+							* ( 1. + gamma / ( std::sqrt(1.5)*Phi_k +(cm[enums::yield_stress]-hardStress_R) ) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm) )
 						)
 					  * stress_T_t
 			   + std::sqrt(2./3.) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm);
@@ -295,7 +360,7 @@ namespace elastoplastic_equations
 	 SymmetricTensor<2,3,Number> get_n_n1( SymmetricTensor<2,3,Number> &stress_k, const SymmetricTensor<4,3> &HillT_H, const bool &GG_mode_active=false, bool &GG_mode_requested=false )
 	 {
 		// For zero strain (initial) we get zero stress and 0/0 doesn't work
-		 Number denominator = (stress_k.norm()==0.) ? 1. : get_yielding_norm( stress_k, HillT_H, GG_mode_active, GG_mode_requested );
+		 Number denominator = (SacadoQP::get_value( stress_k.norm() )==0.) ? 1. : get_yielding_norm( stress_k, HillT_H, GG_mode_active, GG_mode_requested );
 		return (HillT_H * stress_k) / denominator;
 	 }
 	 //#######################################################################################################################################################
@@ -321,7 +386,7 @@ namespace elastoplastic_equations
 		 return get_yielding_norm( stress_k, HillT_H, GG_mode_active, GG_mode_requested ) - std::sqrt(2./3.) * ( cm[enums::yield_stress] - hardStress_R );
 	 }
 	 //#######################################################################################################################################################
-	 // The following is only used for analytical tangents (because it's the analytical tangent), hence we need to \a Number template
+	 // The following functions are only used for analytical tangents (because it's the analytical tangent), hence we need to \a Number template
 	 //#######################################################################################################################################################
 //	 template<typename Number>
 //	 SymmetricTensor<4,3> get_Lambda_ep( const Number &gamma_input )
