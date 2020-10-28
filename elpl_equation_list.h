@@ -31,7 +31,9 @@ namespace enums
 		 K = 3,
 		 yield_stress_incr = 4,
 		 K_exp = 5,
-		 plastic_hardening = 6
+		 plastic_hardening = 6,
+		 plastic_aniso = 7,
+		 n_entries = 8
 	};
 }
 
@@ -221,8 +223,12 @@ namespace elastoplastic_equations
 //		return invert<3,Number>( identity_tensor<3,Number>()
 //								 + 2.*cm[enums::mu] * dmg_mu/dmg_p * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress] - hardStress_R) ) * SymmetricTensor<4,3,Number>(HillT_H) )
 //			   * stress_T_t;
-		 return get_Ainv( gamma, hardStress_R, Number(0), cm, HillT_H, dmg_mu, dmg_p ) * stress_T_t;
+		 if ( cm[enums::plastic_aniso] > 0.5 ) // true
+			 return get_Ainv( gamma, hardStress_R, /*Phi_k=*/Number(0), cm, HillT_H, dmg_mu, dmg_p ) * stress_T_t;
+		 else
+			 return stress_T_t - 2. *  cm[enums::mu] * gamma * deviator(stress_T_t) / ( deviator(stress_T_t).norm() + 1e-100);
 	 }
+	 // Trying to improve the AD convergence by differentiating between +Phi_k terms and +Phi_n1=0
 //	 SymmetricTensor<2,3,fad_double> get_stress_n1( const fad_double &gamma, const fad_double &hardStress_R, const SymmetricTensor<2,3,fad_double> &stress_T_t, const double &Phi_k,
 //			 	 	 	 	 	 	 	 	 	const SymmetricTensor<4,3> &HillT_H, const std::vector<double> &cm, const fad_double dmg_mu=1., const fad_double dmg_p=1. )
 //	 {
@@ -247,16 +253,6 @@ namespace elastoplastic_equations
 //			 std::cout << "stres_n1_old2 " << stress_n1_old << std::endl;
 //
 //		 return stress_n1_old;
-//	 }
-//	 SymmetricTensor<2,3,double> get_stress_n1( const double &gamma, const double &hardStress_R, const SymmetricTensor<2,3,double> &stress_T_t, const double &Phi_k,
-//			 	 	 	 	 	 	 	 	 	const SymmetricTensor<4,3> &HillT_H, const std::vector<double> &cm, const double dmg_mu=1., const double dmg_p=1. )
-//	 {
-//		// start from the trial value
-//		// Note that for the following to work, namely that we don't use alpha as an input argument, we need to compute the newest alpha
-//		// via the get_alpha_n_k_ep function (which writes it into the member variable \a alpha_k)
-//		 return invert<3,double>( identity_tensor<3,double>()
-//								 + 2.*cm[enums::mu] * dmg_mu/dmg_p * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress] - hardStress_R) + Phi_k*0 ) * SymmetricTensor<4,3,double>(HillT_H) )
-//			   * stress_T_t;
 //	 }
 	 //#######################################################################################################################################################
 	 template<typename Number>
@@ -307,14 +303,19 @@ namespace elastoplastic_equations
 		SymmetricTensor<4,3,Number> A_inv = get_Ainv( gamma, hardStress_R, Number(0), cm, HillT_H, dmg_mu, dmg_p );
 		// The use of the newest yield function seems to be quite quite advantages (reduces nbr of qp iterations by one,
 		// and for linear isotropic hardening instead of five iterations, we get the desired one-step solution)
-		return - n_k  * (
-							(A_inv*A_inv)
-							* HillT_H
-							* 2. * cm[enums::mu] / ( std::sqrt(2./3.) * (cm[enums::yield_stress]-hardStress_R) + Phi_k )
-							* ( 1. + gamma / ( std::sqrt(1.5)*Phi_k +(cm[enums::yield_stress]-hardStress_R) ) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm) )
-						)
-					  * stress_T_t
-			   + std::sqrt(2./3.) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm);
+		 if ( cm[enums::plastic_aniso] > 0.5 ) // true
+		 {
+			return - n_k  * (
+								(A_inv*A_inv)
+								* HillT_H
+								* 2. * cm[enums::mu] / ( std::sqrt(2./3.) * (cm[enums::yield_stress]-hardStress_R) + Phi_k )
+								* ( 1. + gamma / ( std::sqrt(1.5)*Phi_k +(cm[enums::yield_stress]-hardStress_R) ) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm) )
+							)
+						  * stress_T_t
+				   + std::sqrt(2./3.) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm);
+		 }
+		 else
+			 return - 2. * cm[enums::mu] + std::sqrt(2./3.) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm);
 	 }
 	 //#######################################################################################################################################################
 	 template<typename Number>
@@ -420,16 +421,26 @@ namespace elastoplastic_equations
 	 /**
 	  * @note Only valid for pure plasticity (not for damage)
 	  */
-	 SymmetricTensor<4,3> get_tangent_plastic( const SymmetricTensor<2,3> &stress_n1, const double &gamma, const SymmetricTensor<2,3> &n_n1,
-			 	 	 	 	 	 	 	 	   const double &alpha_k, const double &alpha_n,
+	 SymmetricTensor<4,3> get_tangent_plastic( const SymmetricTensor<2,3> &stress_n1, const SymmetricTensor<2,3> &stress_T_t, const double &gamma, const SymmetricTensor<2,3> &n_n1,
+											   const double &alpha_k, const double &alpha_n, const double &hardStress_R, const double &Phi_k,
 											   const std::vector<double> &cm, const SymmetricTensor<4,3> &HillT_H )
 	 {
-		SymmetricTensor<4,3> N_four = get_N_four( stress_n1, HillT_H );
-		SymmetricTensor<4,3> d_Tt_d_eps = cm[enums::kappa] * outer_product( unit_symmetric_tensor<3>(), unit_symmetric_tensor<3>() )
-										  + 2. * cm[enums::mu] * deviator_tensor<3>();
-		SymmetricTensor<4,3> E_e = invert( invert(d_Tt_d_eps) + gamma * N_four );
+		 if ( cm[enums::plastic_aniso] > 0.5 ) // true
+		 {
+			SymmetricTensor<4,3> N_four = get_N_four( stress_n1, HillT_H );
+			SymmetricTensor<4,3> d_Tt_d_eps = cm[enums::kappa] * outer_product( unit_symmetric_tensor<3>(), unit_symmetric_tensor<3>() )
+											  + 2. * cm[enums::mu] * deviator_tensor<3>();
+			SymmetricTensor<4,3> E_e = invert( invert(d_Tt_d_eps) + gamma * N_four );
 
-		return E_e - 1. / ( n_n1 * E_e * n_n1 - std::sqrt(2./3.) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm) ) * ( outer_product(E_e*n_n1, n_n1*E_e) );
+			return E_e - 1. / ( n_n1 * E_e * n_n1 - std::sqrt(2./3.) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm) ) * ( outer_product(E_e*n_n1, n_n1*E_e) );
+		 }
+		 else
+		 {
+				return cm[enums::kappa] * outer_product(unit_symmetric_tensor<3>(), unit_symmetric_tensor<3>())
+					   + 2. * cm[enums::mu] * deviator_tensor<3>()
+					   - 4.*cm[enums::mu]*cm[enums::mu] / -(get_dPhi_dgamma( gamma, hardStress_R, alpha_k, Phi_k, n_n1, stress_T_t, alpha_n, cm, HillT_H )) * outer_product(n_n1,n_n1)
+					   - 4.*cm[enums::mu]*cm[enums::mu] * gamma / deviator(stress_T_t).norm() * ( deviator_tensor<3>() - outer_product(n_n1,n_n1) );
+		 }
 	 }
  }
 
