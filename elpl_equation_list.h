@@ -258,6 +258,7 @@ namespace elastoplastic_equations
 	 template<typename Number>
 	 Number get_d_R_d_gammap( const Number &gamma, const Number &alpha_k, const double &alpha_n, const std::vector<double> &cm )
 	 {
+		// d_R_d_gammap is valid for R(alpha) and R(eps_p_eq), only for saturated alpha I would see an issue
 		switch ( int(cm[enums::plastic_hardening]) )
 		{
 			case enums::standard_lin_iso:
@@ -330,7 +331,7 @@ namespace elastoplastic_equations
 			case enums::saturated_Voce_hard_stress:
 				return /*hardStress_R =*/ - cm[enums::yield_stress_incr] * ( 1. - std::exp(-cm[enums::K] / cm[enums::yield_stress_incr] * alpha_k) );
 			case enums::saturated_Miehe_hard_stress:
-				return /*hardStress_R =*/ - cm[enums::K] * alpha_k - cm[enums::yield_stress_incr] * ( 1 - std::exp(-cm[enums::K_exp] * alpha_k) );
+				return /*hardStress_R =*/ - cm[enums::K] * alpha_k - cm[enums::yield_stress_incr] * (1. - std::exp(-cm[enums::K_exp] * alpha_k) );
 //	 		case enums::your_hard_law:
 //				return /*hardStress_R =*/ ...;
 		}
