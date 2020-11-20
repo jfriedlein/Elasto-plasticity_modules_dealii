@@ -226,7 +226,15 @@ namespace elastoplastic_equations
 		 if ( cm[enums::plastic_aniso] > 0.5 ) // true
 			 return get_Ainv( gamma, hardStress_R, /*Phi_k=*/Number(0), cm, HillT_H, dmg_mu, dmg_p ) * stress_T_t;
 		 else
-			 return stress_T_t - 2. *  cm[enums::mu] * gamma * deviator(stress_T_t) / ( deviator(stress_T_t).norm() + 1e-100);
+		 {
+			 SymmetricTensor<2,3,Number> n_n1;
+			 // If the stress is zero, then the evolution would not be defined (nan).
+			 // So we catch this case and only compute \a n_n1 for nonzero stress.
+			 // Else we leave the zero entries in \a n_n1 from the declaration.
+			  if ( deviator<3,Number>(stress_T_t).norm()!=0 )
+				 n_n1 = deviator<3,Number>(stress_T_t) / deviator<3,Number>(stress_T_t).norm();
+			 return stress_T_t - 2. *  cm[enums::mu] * gamma * n_n1;
+		 }
 	 }
 	 // Trying to improve the AD convergence by differentiating between +Phi_k terms and +Phi_n1=0
 //	 SymmetricTensor<2,3,fad_double> get_stress_n1( const fad_double &gamma, const fad_double &hardStress_R, const SymmetricTensor<2,3,fad_double> &stress_T_t, const double &Phi_k,
