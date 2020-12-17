@@ -23,6 +23,12 @@ namespace enums
 		 saturated_Miehe_hard_stress = 3
 	};
 
+	enum enum_P_kinHard_law
+	{
+		 P_kinHard_standard_lin = 0,
+		 P_kinHard_saturated = 1
+	};
+
 	enum enum_material_parameters
 	{
 		 kappa = 0,
@@ -33,7 +39,9 @@ namespace enums
 		 K_exp = 5,
 		 plastic_hardening = 6,
 		 plastic_aniso = 7,
-		 n_entries = 8
+		 P_hard_iso_kin = 8,
+		 kin_hard_mod = 9,
+		 n_entries = 10
 	};
 }
 
@@ -185,15 +193,19 @@ namespace elastoplastic_equations
 	 }
 	 //#######################################################################################################################################################
 	 template<typename Number>
-	 SymmetricTensor<2,3,Number> get_stress_T_t( const SymmetricTensor<2,3,Number> &eps_n1, const SymmetricTensor<2,3> &eps_p_n, const std::vector<double> &material_parameters )
+	 SymmetricTensor<2,3,Number> get_stress_T_t( const SymmetricTensor<2,3,Number> &eps_n1, const SymmetricTensor<2,3> &eps_p_n,
+			 	 	 	 	 	 	 	 	 	 const std::vector<double> &material_parameters, const Number dmg_kappa=1., const Number dmg_mu=1. )
 	 {
-		 return /*stress_T_t =*/ material_parameters[enums::kappa] * trace(eps_n1) * unit_symmetric_tensor<3,Number>()
-								 + 2. * material_parameters[enums::mu] * ( deviator(eps_n1) - eps_p_n );
+		 return /*stress_T_t =*/ dmg_kappa * material_parameters[enums::kappa] * trace(eps_n1) * unit_symmetric_tensor<3,Number>()
+								 + 2. * dmg_mu * material_parameters[enums::mu] * ( deviator(eps_n1) - eps_p_n );
 	 }
 	 //#######################################################################################################################################################
 	 /**
+	  * That presumably only works for the driving force that has been used for the yield function
 	  * Computing the inverse of the fourth order tensor \a A, optionally we can incorporate the
-	  * yield function \a Phi_k. However, it converges better if the leave \a Phi_k as zero.
+	  * yield function \a Phi_k.
+	  * @todo However, it converges better if the leave \a Phi_k as zero.
+	  * @todo Kinematic hardening is only implemented as a special case and not yet modular.
 	  * @param gamma
 	  * @param hardStress_R
 	  * @param Phi_k Not called by reference to be able to call get_Ainv(..., Number(0), ...) instead of
@@ -207,34 +219,61 @@ namespace elastoplastic_equations
 	 template<typename Number>
 	 SymmetricTensor<4,3,Number> get_Ainv( const Number &gamma, const Number &hardStress_R, const Number Phi_k,
 										   const std::vector<double> &cm, const SymmetricTensor<4,3> &HillT_H,
-										   const Number dmg_mu=1., const Number dmg_p=1. )
+										   const Number dmg_mu=1., const Number dmg_p=1., const bool stressRel_Flag=false )
 	 {
 		return invert<3,Number>( identity_tensor<3,Number>()
-								 + 2. * cm[enums::mu] * dmg_mu/dmg_p * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress]-hardStress_R) + Phi_k )
+								 + (
+										 2. * cm[enums::mu] * dmg_mu/dmg_p
+										 + cm[enums::kin_hard_mod] / dmg_p * double(stressRel_Flag)
+								   ) * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress]-hardStress_R) + Phi_k )
 								   * SymmetricTensor<4,3,Number>(HillT_H) );
 	 }
 	 //#######################################################################################################################################################
 	 // @note We use \a HillT_H as constant input argument, but transform it to a SymmetricTensor<4,3,Number>, so all the tensor operations work
 	 template<typename Number>
-	 SymmetricTensor<2,3,Number> get_stress_n1( const Number &gamma, const Number &hardStress_R, const SymmetricTensor<2,3,Number> &stress_T_t,
-			 	 	 	 	 	 	 	 	 	const SymmetricTensor<4,3> &HillT_H, const std::vector<double> &cm, const Number dmg_mu=1., const Number dmg_p=1. )
+	 SymmetricTensor<2,3,Number> get_stressRel_Xsi_n1( const Number &gamma, const Number &hardStress_R, const SymmetricTensor<2,3,Number> &stressRel_Xsi_t,
+			 	 	 	 	 	 	 	 	 	const SymmetricTensor<4,3> &HillT_H, const std::vector<double> &cm, const Number dmg_mu=1., const Number dmg_p=1., const bool stressRel_Flag=true )
 	 {
 		// start from the trial value
 //		return invert<3,Number>( identity_tensor<3,Number>()
 //								 + 2.*cm[enums::mu] * dmg_mu/dmg_p * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress] - hardStress_R) ) * SymmetricTensor<4,3,Number>(HillT_H) )
 //			   * stress_T_t;
 		 if ( cm[enums::plastic_aniso] > 0.5 ) // true
-			 return get_Ainv( gamma, hardStress_R, /*Phi_k=*/Number(0), cm, HillT_H, dmg_mu, dmg_p ) * stress_T_t;
+			 return get_Ainv( gamma, hardStress_R, /*Phi_k=*/Number(0), cm, HillT_H, dmg_mu, dmg_p, stressRel_Flag ) * stressRel_Xsi_t;
 		 else
 		 {
 			 SymmetricTensor<2,3,Number> n_n1;
 			 // If the stress is zero, then the evolution would not be defined (nan).
 			 // So we catch this case and only compute \a n_n1 for nonzero stress.
 			 // Else we leave the zero entries in \a n_n1 from the declaration.
-			  if ( deviator<3,Number>(stress_T_t).norm()!=0 )
-				 n_n1 = deviator<3,Number>(stress_T_t) / deviator<3,Number>(stress_T_t).norm();
-			 return stress_T_t - 2. *  cm[enums::mu] * gamma * n_n1;
+			  if ( deviator<3,Number>(stressRel_Xsi_t).norm()!=0 )
+				 n_n1 = deviator<3,Number>(stressRel_Xsi_t) / deviator<3,Number>(stressRel_Xsi_t).norm();
+			 return stressRel_Xsi_t - ( 2. * cm[enums::mu] * dmg_mu + stressRel_Flag * cm[enums::kin_hard_mod] ) * gamma/dmg_p * n_n1 ;
 		 }
+	 }
+	 //#######################################################################################################################################################
+	 /**
+	  * @todo Study this in more detail: This function exists parallel to get_stressRel_Xsi_n1,
+	  * because calling the latter to get the true stress even when switching the
+	  * kinematic hardening contribution off, does not work.
+	  * @todo Could alternative use Xsi and subtract the backstress_k
+	  * @param gamma
+	  * @param hardStress_R
+	  * @param stress_T_t
+	  * @param n_k The NEWEST evolution direction
+	  * @param HillT_H
+	  * @param cm
+	  * @param dmg_mu
+	  * @param dmg_p
+	  * @return
+	  */
+	 template<typename Number>
+	 SymmetricTensor<2,3,Number> get_stress_n1( const Number &gamma, const Number &hardStress_R, const SymmetricTensor<2,3,Number> &stress_T_t, const SymmetricTensor<2,3,Number> &n_k,
+			 	 	 	 	 	 	 	 	 	const SymmetricTensor<4,3> &HillT_H, const std::vector<double> &cm, const Number dmg_mu=1., const Number dmg_p=1. )
+	 {
+		 // We require the input argument \a n_k to be the newest evolution direction.
+		 // Only then the following stress update is also valid for anisotropic plasticity.
+		 return stress_T_t - 2. * cm[enums::mu] * dmg_mu/dmg_p * gamma * n_k ;
 	 }
 	 // Trying to improve the AD convergence by differentiating between +Phi_k terms and +Phi_n1=0
 //	 SymmetricTensor<2,3,fad_double> get_stress_n1( const fad_double &gamma, const fad_double &hardStress_R, const SymmetricTensor<2,3,fad_double> &stress_T_t, const double &Phi_k,
@@ -309,6 +348,9 @@ namespace elastoplastic_equations
 			 	 	 	     const SymmetricTensor<2,3,Number> &stress_T_t, const double &alpha_n,
 							 const std::vector<double> &cm, const SymmetricTensor<4,3> &HillT_H, const Number &dmg_mu=1., const Number &dmg_p=1. )
 	 {
+		 if ( cm[enums::P_hard_iso_kin] < 1 )
+			 AssertThrow( false, ExcMessage("elpl_equation - get_dPhi_dgamma<< Ay tangent not yet for kinematic hardening."));
+
 		SymmetricTensor<4,3,Number> A_inv = get_Ainv( gamma, hardStress_R, Number(0), cm, HillT_H, dmg_mu, dmg_p );
 		// The use of the newest yield function seems to be quite quite advantages (reduces nbr of qp iterations by one,
 		// and for linear isotropic hardening instead of five iterations, we get the desired one-step solution)
@@ -333,17 +375,34 @@ namespace elastoplastic_equations
 		switch ( int(cm[enums::plastic_hardening]) )
 		{
 			case enums::standard_lin_iso:
-				return /*hardStress_R =*/ - cm[enums::K] * alpha_k;
+				return /*hardStress_R =*/ - cm[enums::P_hard_iso_kin] * cm[enums::K] * alpha_k;
 			case enums::saturated_alpha:
-				return /*hardStress_R =*/ - cm[enums::K] * alpha_k;
+				return /*hardStress_R =*/ - cm[enums::P_hard_iso_kin] * cm[enums::K] * alpha_k;
 			case enums::saturated_Voce_hard_stress:
-				return /*hardStress_R =*/ - cm[enums::yield_stress_incr] * ( 1. - std::exp(-cm[enums::K] / cm[enums::yield_stress_incr] * alpha_k) );
+				return /*hardStress_R =*/ - cm[enums::P_hard_iso_kin] * cm[enums::yield_stress_incr] * ( 1. - std::exp(-cm[enums::K] / cm[enums::yield_stress_incr] * alpha_k) );
 			case enums::saturated_Miehe_hard_stress:
-				return /*hardStress_R =*/ - cm[enums::K] * alpha_k - cm[enums::yield_stress_incr] * (1. - std::exp(-cm[enums::K_exp] * alpha_k) );
+				return /*hardStress_R =*/ - cm[enums::P_hard_iso_kin] *  ( cm[enums::K] * alpha_k
+																		   + cm[enums::yield_stress_incr] * (1. - std::exp(-cm[enums::K_exp] * alpha_k) ) );
 //	 		case enums::your_hard_law:
 //				return /*hardStress_R =*/ ...;
 		}
 		return false;
+	 }
+	 //#######################################################################################################################################################
+	 template<typename Number>
+	 SymmetricTensor<2,3,Number> get_backStress_B( const SymmetricTensor<2,3,Number> &beta_k, const std::vector<double> &cm )
+	 {
+		//switch ( int(cm[enums::plastic_kin_hardening]) )
+		switch ( enums::P_kinHard_standard_lin ) // HARDCODED
+		{
+			case enums::P_kinHard_standard_lin:
+				return /*backStress_B =*/ - 2./3. * cm[enums::K] * ( 1.-cm[enums::P_hard_iso_kin] ) * beta_k;
+			case enums::P_kinHard_saturated:
+				return /*backStress_B =*/ - 2./3. * cm[enums::K] * ( 1.-cm[enums::P_hard_iso_kin] ) * beta_k / ( beta_k.norm() + 1e-20 ); // WAG
+//	 		case enums::your_hard_law:
+//				return /*backStress_B =*/ ...;
+		}
+		return SymmetricTensor<2,3,Number>();
 	 }
 	 //#######################################################################################################################################################
 	 template<typename Number>
@@ -434,6 +493,9 @@ namespace elastoplastic_equations
 											   const double &alpha_k, const double &alpha_n, const double &hardStress_R, const double &Phi_k,
 											   const std::vector<double> &cm, const SymmetricTensor<4,3> &HillT_H )
 	 {
+		 if ( cm[enums::P_hard_iso_kin] < 1 )
+			 AssertThrow( false, ExcMessage("elpl_equation - get_dPhi_dgamma<< Ay tangent not yet for kinematic hardening."));
+
 		 if ( cm[enums::plastic_aniso] > 0.5 ) // true
 		 {
 			SymmetricTensor<4,3> N_four = get_N_four( stress_n1, HillT_H );
