@@ -422,6 +422,9 @@ namespace elastoplastic_equations
 			else
 				AssertThrow( false, ExcMessage("elpl_equation_list<< The Hill norm of the stress tensor got negative as "+std::to_string(SacadoQP::get_value(tmp))+"."));
 		}
+		// Overwrite derivatives with truly zero
+		else if ( SacadoQP::get_value(tmp) == 0 )
+			tmp = 0.;
 		return std::sqrt(tmp);
 	 }
 	 //#######################################################################################################################################################
