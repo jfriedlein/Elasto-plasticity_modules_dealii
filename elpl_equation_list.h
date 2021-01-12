@@ -268,8 +268,8 @@ namespace elastoplastic_equations
 	  * @return
 	  */
 	 template<typename Number>
-	 SymmetricTensor<2,3,Number> get_stress_n1( const Number &gamma, const Number &hardStress_R, const SymmetricTensor<2,3,Number> &stress_T_t, const SymmetricTensor<2,3,Number> &n_k,
-			 	 	 	 	 	 	 	 	 	const SymmetricTensor<4,3> &HillT_H, const std::vector<double> &cm, const Number dmg_mu=1., const Number dmg_p=1. )
+	 SymmetricTensor<2,3,Number> get_stress_n1( const Number &gamma, const SymmetricTensor<2,3,Number> &stress_T_t, const SymmetricTensor<2,3,Number> &n_k,
+			 	 	 	 	 	 	 	 	 	const std::vector<double> &cm, const Number dmg_mu=1., const Number dmg_p=1. )
 	 {
 		 // We require the input argument \a n_k to be the newest evolution direction.
 		 // Only then the following stress update is also valid for anisotropic plasticity.
