@@ -381,7 +381,7 @@ namespace elastoplastic_equations
 			case enums::saturated_Voce_hard_stress:
 				return /*hardStress_R =*/ - cm[enums::P_hard_iso_kin] * cm[enums::yield_stress_incr] * ( 1. - std::exp(-cm[enums::K] / cm[enums::yield_stress_incr] * alpha_k) );
 			case enums::saturated_Miehe_hard_stress:
-				return /*hardStress_R =*/ - cm[enums::P_hard_iso_kin] *  ( cm[enums::K] * alpha_k
+				return /*hardStress_R =*/ - cm[enums::P_hard_iso_kin] * ( cm[enums::K] * alpha_k
 																		   + cm[enums::yield_stress_incr] * (1. - std::exp(-cm[enums::K_exp] * alpha_k) ) );
 //	 		case enums::your_hard_law:
 //				return /*hardStress_R =*/ ...;
