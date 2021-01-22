@@ -238,9 +238,9 @@ namespace elastoplastic_equations
 //		return invert<3,Number>( identity_tensor<3,Number>()
 //								 + 2.*cm[enums::mu] * dmg_mu/dmg_p * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress] - hardStress_R) ) * SymmetricTensor<4,3,Number>(HillT_H) )
 //			   * stress_T_t;
-		 if ( cm[enums::plastic_aniso] > 0.5 ) // true
+		 if ( cm[enums::plastic_aniso] > 0.5 ) // plastic anisotropy
 			 return get_Ainv( gamma, hardStress_R, /*Phi_k=*/Number(0), cm, HillT_H, dmg_mu, dmg_p, stressRel_Flag ) * stressRel_Xsi_t;
-		 else
+		 else // isotropic
 		 {
 			 SymmetricTensor<2,3,Number> n_n1;
 			 // If the stress is zero, then the evolution would not be defined (nan).
@@ -432,7 +432,7 @@ namespace elastoplastic_equations
 	 SymmetricTensor<2,3,Number> get_n_n1( SymmetricTensor<2,3,Number> &stress_k, const SymmetricTensor<4,3> &HillT_H, const bool &GG_mode_active=false, bool &GG_mode_requested=false )
 	 {
 		// For zero strain (initial) we get zero stress and 0/0 doesn't work
-		 Number denominator = (SacadoQP::get_value( stress_k.norm() )==0.) ? 1. : get_yielding_norm( stress_k, HillT_H, GG_mode_active, GG_mode_requested );
+		 Number denominator = (SacadoQP::get_value( stress_k.norm() )==0.) ? 1e-100 : get_yielding_norm( stress_k, HillT_H, GG_mode_active, GG_mode_requested );
 		return (HillT_H * stress_k) / denominator;
 	 }
 	 //#######################################################################################################################################################
