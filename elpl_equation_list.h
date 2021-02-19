@@ -109,6 +109,9 @@ namespace elastoplastic_equations
 			 H_matrix(2,0) = H_matrix(0,2);
 		 }
 
+		 // The \a H_matrix seems to only work for the global coordinate system.
+		 // For rotated ones, we seem to need the following.
+
 		 // orthogonal basis by three orthogonal directions a_i
 		 std::vector< Tensor<1,3> > a_ (3);
 		 {
