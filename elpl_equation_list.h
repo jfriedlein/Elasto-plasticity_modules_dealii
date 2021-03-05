@@ -20,7 +20,8 @@ namespace enums
 		 standard_lin_iso = 0,
 		 saturated_alpha = 1,
 		 saturated_Voce_hard_stress = 2,
-		 saturated_Miehe_hard_stress = 3
+		 saturated_Miehe_hard_stress = 3,
+		 exponent_exponential_hard_stress = 4
 	};
 
 	enum enum_P_kinHard_law
@@ -183,6 +184,8 @@ namespace elastoplastic_equations
 				return /*alpha_k =*/  alpha_n + std::sqrt(2./3.) * gamma_k;
 			case enums::saturated_Miehe_hard_stress:
 				return /*alpha_k =*/  alpha_n + std::sqrt(2./3.) * gamma_k;
+			case enums::exponent_exponential_hard_stress:
+				return /*alpha_k =*/  alpha_n + std::sqrt(2./3.) * gamma_k;
 //	 		case enums::your_hard_law:
 //				return /*alpha_k =*/ ...;
 		}
@@ -330,6 +333,9 @@ namespace elastoplastic_equations
 			case enums::saturated_Miehe_hard_stress:
 				return /*d_R_d_gammap =*/ ( -cm[enums::K] - cm[enums::yield_stress_incr] * cm[enums::K_exp] * std::exp( -cm[enums::K_exp] * alpha_k ))
 										  * std::sqrt(2./3.);
+			case enums::exponent_exponential_hard_stress:
+				AssertThrow(false, ExcMessage("get_d_R_d_gammap<< exponent_exponential_hard_stress not yet with ay tangents."));
+				return 0.;
 //	 		case enums::your_hard_law:
 //				return /*d_R_d_gammap =*/ ...;
 		}
@@ -393,6 +399,9 @@ namespace elastoplastic_equations
 				return /*hardStress_R =*/ - cm[enums::P_hard_iso_kin] * cm[enums::yield_stress_incr] * ( 1. - std::exp(-cm[enums::K] / cm[enums::yield_stress_incr] * alpha_k) );
 			case enums::saturated_Miehe_hard_stress:
 				return /*hardStress_R =*/ - cm[enums::P_hard_iso_kin] * ( cm[enums::K] * alpha_k
+																		   + cm[enums::yield_stress_incr] * (1. - std::exp(-cm[enums::K_exp] * alpha_k) ) );
+			case enums::exponent_exponential_hard_stress:
+				return /*hardStress_R =*/ - cm[enums::P_hard_iso_kin] * ( cm[enums::K] * std::pow( alpha_k, 1.5)
 																		   + cm[enums::yield_stress_incr] * (1. - std::exp(-cm[enums::K_exp] * alpha_k) ) );
 //	 		case enums::your_hard_law:
 //				return /*hardStress_R =*/ ...;
