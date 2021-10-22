@@ -283,7 +283,7 @@ namespace elastoplastic_equations
 	  */
 	 template<typename Number>
 	 SymmetricTensor<2,3,Number> get_stress_n1( const Number &gamma, const SymmetricTensor<2,3,Number> &stress_T_t, const SymmetricTensor<2,3,Number> &n_k,
-			 	 	 	 	 	 	 	 	 	const std::vector<double> &cm, const Number dmg_mu=1., const Number dmg_p=1. )
+			 	 	 	 	 	 	 	 	 	const std::vector<double> &cm, const Number dmg_mu=Number(1.), const Number dmg_p=Number(1.) )
 	 {
 		 // We require the input argument \a n_k to be the newest evolution direction.
 		 // Only then the following stress update is also valid for anisotropic plasticity.
@@ -510,7 +510,7 @@ namespace elastoplastic_equations
 	 }
 	 //#######################################################################################################################################################
 	 /**
-	  * @note Only valid for pure plasticity (not for damage)
+	  * @note Only valid for pure elasto-plasticity (not for damage)
 	  */
 	 SymmetricTensor<4,3> get_tangent_plastic( const SymmetricTensor<2,3> &stress_n1, const SymmetricTensor<2,3> &stress_T_t, const double &gamma, const SymmetricTensor<2,3> &n_n1,
 											   const double &alpha_k, const double &alpha_n, const double &hardStress_R, const double &Phi_k,
@@ -526,14 +526,17 @@ namespace elastoplastic_equations
 											  + 2. * cm[enums::mu] * deviator_tensor<3>();
 			SymmetricTensor<4,3> E_e = invert( invert(d_Tt_d_eps) + gamma * N_four );
 
+			//std::cout << "check 0 " << invert(invert(E_e))-E_e << std::endl;
+			//std::cout << "check 1 " << E_e * (invert(d_Tt_d_eps) + gamma * N_four) << std::endl;
+
 			return E_e - 1. / ( n_n1 * E_e * n_n1 - std::sqrt(2./3.) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm) ) * ( outer_product(E_e*n_n1, n_n1*E_e) );
 		 }
 		 else
 		 {
-				return cm[enums::kappa] * outer_product(unit_symmetric_tensor<3>(), unit_symmetric_tensor<3>())
-					   + 2. * cm[enums::mu] * deviator_tensor<3>()
-					   - 4.*cm[enums::mu]*cm[enums::mu] / -(get_dPhi_dgamma( gamma, hardStress_R, alpha_k, Phi_k, n_n1, stress_T_t, alpha_n, cm, HillT_H )) * outer_product(n_n1,n_n1)
-					   - 4.*cm[enums::mu]*cm[enums::mu] * gamma / deviator(stress_T_t).norm() * ( deviator_tensor<3>() - outer_product(n_n1,n_n1) );
+			return cm[enums::kappa] * outer_product(unit_symmetric_tensor<3>(), unit_symmetric_tensor<3>())
+				   + 2. * cm[enums::mu] * deviator_tensor<3>()
+				   - 4.*cm[enums::mu]*cm[enums::mu] / -(get_dPhi_dgamma( gamma, hardStress_R, alpha_k, Phi_k, n_n1, stress_T_t, alpha_n, cm, HillT_H )) * outer_product(n_n1,n_n1)
+				   - 4.*cm[enums::mu]*cm[enums::mu] * gamma / deviator(stress_T_t).norm() * ( deviator_tensor<3>() - outer_product(n_n1,n_n1) );
 		 }
 	 }
  }
