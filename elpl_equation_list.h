@@ -382,7 +382,7 @@ namespace elastoplastic_equations
 								(A_inv*A_inv)
 								* HillT_H
 								* 2. * cm[enums::mu] / ( std::sqrt(2./3.) * (cm[enums::yield_stress]-hardStress_R) + Phi_k )
-								* ( 1. + gamma / ( std::sqrt(1.5)*Phi_k +(cm[enums::yield_stress]-hardStress_R) ) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm) )
+								* ( 1. + gamma / ( std::sqrt(1.5)*Phi_k + (cm[enums::yield_stress]-hardStress_R) ) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm) )
 							)
 						  * stress_T_t
 				   + std::sqrt(2./3.) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm);
