@@ -241,19 +241,13 @@ namespace elastoplastic_equations
 	 // @note We use \a HillT_H as constant input argument, but transform it to a SymmetricTensor<4,3,Number>, so all the tensor operations work
 	 template<typename Number>
 	 SymmetricTensor<2,3,Number> get_stressRel_Xsi_n1( const Number &gamma, const Number &hardStress_R, const SymmetricTensor<2,3,Number> &stressRel_Xsi_t,
-			 	 	 	 	 	 	 	 	 		   const SymmetricTensor<4,3> &HillT_H, const std::vector<double> &cm, Number Phi_p=Number(0),
+			 	 	 	 	 	 	 	 	 		   const SymmetricTensor<4,3> &HillT_H, const std::vector<double> &cm,
 													   const Number dmg_mu=1., const Number dmg_p=1., const bool stressRel_Flag=true )
 	 {
 		// start from the trial value
 //		return invert<3,Number>( identity_tensor<3,Number>()
 //								 + 2.*cm[enums::mu] * dmg_mu/dmg_p * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress] - hardStress_R) ) * SymmetricTensor<4,3,Number>(HillT_H) )
 //			   * stress_T_t;
-
-		 // TESTING
-//		 if ( Phi_p > 0.)
-//			 Phi_p = 0.;
-//		 else
-//			 SacadoQP::set_value(Phi_p, 0.);
 
 		 if ( cm[enums::plastic_aniso] > 0.5 ) // plastic anisotropy
 			 return get_Ainv( gamma, hardStress_R, /*Phi_k=*/Number(0), cm, HillT_H, dmg_mu, dmg_p, stressRel_Flag ) * stressRel_Xsi_t;
