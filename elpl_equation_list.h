@@ -198,15 +198,15 @@ namespace elastoplastic_equations
 	 template<typename Number>
 	 SymmetricTensor<2,3,Number> get_eps_p_n_k( const Number &gamma, const SymmetricTensor<2,3,Number> &n_n1, const SymmetricTensor<2,3,double> &eps_p_n, const Number dmg_p=1. )
 	 {
-		return SymmetricTensor<2,3,Number>(eps_p_n) + (1. / dmg_p) * gamma * n_n1;
+		return SymmetricTensor<2,3,Number>(eps_p_n) + Number(1. / dmg_p * gamma) * n_n1;
 	 }
 	 //#######################################################################################################################################################
 	 template<typename Number>
 	 SymmetricTensor<2,3,Number> get_stress_T_t( const SymmetricTensor<2,3,Number> &eps_n1, const SymmetricTensor<2,3> &eps_p_n,
 			 	 	 	 	 	 	 	 	 	 const std::vector<double> &material_parameters, const Number dmg_kappa=1., const Number dmg_mu=1. )
 	 {
-		 return /*stress_T_t =*/ dmg_kappa * material_parameters[enums::kappa] * trace(eps_n1) * unit_symmetric_tensor<3,Number>()
-								 + 2. * dmg_mu * material_parameters[enums::mu] * ( deviator(eps_n1) - eps_p_n );
+		 return /*stress_T_t =*/ Number( dmg_kappa * material_parameters[enums::kappa] * trace(eps_n1) ) * unit_symmetric_tensor<3,Number>()
+								 + Number( 2. * dmg_mu * material_parameters[enums::mu] ) * ( deviator(eps_n1) - eps_p_n );
 	 }
 	 //#######################################################################################################################################################
 	 /**
@@ -230,12 +230,16 @@ namespace elastoplastic_equations
 										   const std::vector<double> &cm, const SymmetricTensor<4,3> &HillT_H,
 										   const Number dmg_mu=1., const Number dmg_p=1., const bool stressRel_Flag=false )
 	 {
-		return invert<3,Number>( identity_tensor<3,Number>()
-								 + (
-										 2. * cm[enums::mu] * dmg_mu/dmg_p
-										 + cm[enums::kin_hard_mod] / dmg_p * double(stressRel_Flag)
-								   ) * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress]-hardStress_R) + Phi_k )
-								   * SymmetricTensor<4,3,Number>(HillT_H) );
+		return invert<3,Number>( 
+								 identity_tensor<3,Number>()
+								 + Number(
+									 		(
+												2. * cm[enums::mu] * dmg_mu/dmg_p
+												+ cm[enums::kin_hard_mod] / dmg_p * double(stressRel_Flag)
+											) * gamma / ( std::sqrt(2./3.)*(cm[enums::yield_stress]-hardStress_R) + Phi_k )
+										 )
+								   		 * SymmetricTensor<4,3,Number>(HillT_H)
+								);
 	 }
 	 //#######################################################################################################################################################
 	 // @note We use \a HillT_H as constant input argument, but transform it to a SymmetricTensor<4,3,Number>, so all the tensor operations work
@@ -259,7 +263,7 @@ namespace elastoplastic_equations
 			 // Else we leave the zero entries in \a n_n1 from the declaration.
 			  if ( deviator<3,Number>(stressRel_Xsi_t).norm()!=0 )
 				 n_n1 = deviator<3,Number>(stressRel_Xsi_t) / deviator<3,Number>(stressRel_Xsi_t).norm();
-			 return stressRel_Xsi_t - ( 2. * cm[enums::mu] * dmg_mu + stressRel_Flag * cm[enums::kin_hard_mod] ) * gamma/dmg_p * n_n1 ;
+			 return stressRel_Xsi_t - Number( ( 2. * cm[enums::mu] * dmg_mu + stressRel_Flag * cm[enums::kin_hard_mod] ) * gamma/dmg_p ) * n_n1 ;
 		 }
 	 }
 	 //#######################################################################################################################################################
@@ -284,7 +288,7 @@ namespace elastoplastic_equations
 	 {
 		 // We require the input argument \a n_k to be the newest evolution direction.
 		 // Only then the following stress update is also valid for anisotropic plasticity.
-		 return stress_T_t - 2. * cm[enums::mu] * dmg_mu/dmg_p * gamma * n_k ;
+		 return stress_T_t - Number( 2. * cm[enums::mu] * dmg_mu/dmg_p * gamma ) * n_k ;
 	 }
 	 // Trying to improve the AD convergence by differentiating between +Phi_k terms and +Phi_n1=0
 //	 SymmetricTensor<2,3,fad_double> get_stress_n1( const fad_double &gamma, const fad_double &hardStress_R, const SymmetricTensor<2,3,fad_double> &stress_T_t, const double &Phi_k,
@@ -375,8 +379,8 @@ namespace elastoplastic_equations
 			return - n_k  * (
 								(A_inv*A_inv)
 								* HillT_H
-								* 2. * cm[enums::mu] / ( std::sqrt(2./3.) * (cm[enums::yield_stress]-hardStress_R) + Phi_k )
-								* ( 1. + gamma / ( std::sqrt(1.5)*Phi_k + (cm[enums::yield_stress]-hardStress_R) ) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm) )
+								* Number( 2. * cm[enums::mu] / ( std::sqrt(2./3.) * (cm[enums::yield_stress]-hardStress_R) + Phi_k ) )
+								* Number( 1. + gamma / ( std::sqrt(1.5)*Phi_k + (cm[enums::yield_stress]-hardStress_R) ) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm) )
 							)
 						  * stress_T_t
 				   + std::sqrt(2./3.) * get_d_R_d_gammap(gamma, alpha_k, alpha_n, cm);
@@ -450,7 +454,7 @@ namespace elastoplastic_equations
 	 }
 	 //#######################################################################################################################################################
 	 template<typename Number>
-	 SymmetricTensor<2,3,Number> get_n_n1( SymmetricTensor<2,3,Number> &stress_k, const SymmetricTensor<4,3> &HillT_H, const bool &GG_mode_active=false, bool &GG_mode_requested=false )
+	 SymmetricTensor<2,3,Number> get_n_n1( const SymmetricTensor<2,3,Number> &stress_k, const SymmetricTensor<4,3> &HillT_H, const bool &GG_mode_active=false, bool &GG_mode_requested=false )
 	 {
 		// For zero strain (initial) we get zero stress and 0/0 doesn't work
 		 Number denominator = (SacadoQP::get_value( stress_k.norm() )==0.) ? 1e-100 : get_yielding_norm( stress_k, HillT_H, GG_mode_active, GG_mode_requested );
